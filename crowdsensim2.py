@@ -315,33 +315,151 @@ source.close()
 destination.close()  
     
 
-if  name_city!='no' :
-     
-    while(True):
-        
-        print ('Antenna choice = ',antenna_decision )
-        print ('Number of Days = ',days)
-        print ('Number of Users = ',num_usr)
-      
-    
-        try:    
-            print ('Downloading map of ***',name_city,'*** ................')
-            G = ox.graph_from_place(name_city,network_type=type_net,simplify=False)
-            break
-        except:
-            print ('Wrong city name, please retry')
-            time.sleep(2)
-            name_city=menu2()
-            
-            
+
+
+
+def getSaveChoice():
     while(True):    
         choice=input('\nDo you want to save it? (y/n)     ')
         ch = choice.lower()
         if ch!='y' and ch !='n':
             print ('Wrong selection, please retry')
-        else :
-            break
-    if ch=='y':
+        else:
+            if ch == 'y':
+                return True
+            else:
+                return False
+
+def getCityGraph(name_city):
+    while(True):
+        print ('Antenna choice = ',antenna_decision )
+        print ('Number of Days = ',days)
+        print ('Number of Users = ',num_usr)
+    
+        try:    
+            print ('Downloading map of ***',name_city,'*** ................')
+            G = ox.graph_from_place(name_city,network_type=type_net,simplify=False)
+            return G
+        except:
+            print ('Wrong city name, please retry')
+            time.sleep(2)
+            name_city=menu2()
+            
+def saveAntennas(antennasList, cityGraph, toSave):
+    c=0
+    afile = open('./Inputs/CoordinatesAntennas.txt', 'w')
+    afile.write("/ID-Antenna/-/Lat/-/Long/\n")
+    for i in range(0,len(antennasList)):
+        if len(antennasList[i])!=0:
+            c+=1
+            antenna=random.choice(antennasList[i])
+            afile.write("%s %s %s\n" % (c,float(cityGraph.node[antenna]['y']), float(cityGraph.node[antenna]['x'])))
+    afile.close()
+
+    if toSave:
+        shutil.copy2('./Inputs/CoordinatesAntennas.txt', './Inputs/saved/'+str(index)+'list/CoordinatesAntennas.txt')
+
+def initListHeat():
+    listheat = []
+    for i in range(0,60):
+        listheat.append(list())
+    return listheat
+
+def percHourStuff(hours):
+    ret_perc_hour=[]
+    listhours=np.loadtxt("./Inputs/hours.txt")
+    sumconts=0
+    #random0_or_tracce1=0
+    
+    #if random0_or_tracce1==0:
+    if True:
+        for i in range(0,hours):
+            listhours[i]=15
+    
+    
+    for i in range(0,hours):
+        sumconts+=listhours[i]
+    
+    perctot=0.0
+    ret_perc_hour.append(0)
+
+    
+    for i in range(0,hours):
+        perc=float(listhours[i])/float(sumconts)
+        perctot+=perc
+        ret_perc_hour.append(perc*100)
+      
+    
+    ret_perc_hour[0]=((float(perctot)/float(hours))*100)
+    return ret_perc_hour
+    
+def drawHeatMap():
+    m = folium.Map([minlat,minlong], tiles='stamentoner', zoom_start=6)
+                
+    hm = plugins.HeatMapWithTime(
+        listheat,
+        auto_play=True
+    )
+                
+    hm.add_to(m)
+                
+    bounds = [(maxlat,maxlong), (minlat,minlong)]
+    m.fit_bounds(bounds)                
+    
+    filepath = '/var/www/html/CrowdSenSim/heat.html'
+    m.save(filepath)
+
+
+def htmlRouteGen(route, G_old, save=False):
+    avl=len(route)/2
+    graph_centroid = (G_old.node[route[int(avl)]]['y'],G_old.node[route[int(avl)]]['x'])
+    route_map = folium.Map(location=graph_centroid, zoom_start=13)
+    for idroute in range(1,len(route)):
+        location=[(G_old.node[route[idroute-1]]['y'],G_old.node[route[idroute-1]]['x']),(G_old.node[route[idroute]]['y'],G_old.node[route[idroute]]['x'])]
+        pl = folium.PolyLine(locations=location,color='red')
+                        
+        pl.add_to(route_map)
+    #icon=DivIcon(icon_size=(150,36),html='<div style="font-size: 16pt;color:red">start</div>')
+    di= folium.map.Marker((G_old.node[route[1]]['y'],G_old.node[route[1]]['x']),popup='Start')
+    di.add_to(route_map)
+                    
+    di= folium.map.Marker((G_old.node[route[idroute]]['y'],G_old.node[route[idroute]]['x']),popup='End')
+    di.add_to(route_map)
+
+    # HONOURS: Wouldn't count on this one working either >_>
+    #route_map = ox.plot_route_folium(G_old, route)
+    filepath = '/var/www/html/CrowdSenSim/route_usr_1day_0.html'
+    route_map.save(filepath)
+    if save:
+        shutil.copy2('/var/www/html/CrowdSenSim/route_usr_1day_0.html', './Inputs/saved/'+str(index)+'list/route_usr_1day_0.html')
+
+# HONOURS: Noticed lat1/lat2 and long1/long2 were only used in bearing calculations,
+# moved to their own function (thankfully if this is wrong, bearing isn't even that
+# important
+def calculateBearing(route, ind, G_old):
+    lat1 = G_old.node[route[ind]]['y'] * math.pi / 180 
+    lat2 = G_old.node[route[ind+1]]['y'] * math.pi / 180 
+    long1 = G_old.node[route[ind]]['x'] * math.pi / 180 
+    long2 = G_old.node[route[ind+1]]['x'] * math.pi / 180                             
+    bearing = math.atan2(math.sin(long2-long1)*math.cos(lat2), math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(long2-long1))
+    bearing = math.degrees(bearing)
+    bearing = (bearing + 360) % 360
+    return bearing
+
+def calculateYX(speed, node, bearing, amt):
+    # HONOURS: I haven't seen a single fucking m defined anywhere. Willing to bet this isn't even getting called >_>
+    distance= float(amt*(speed*60))/1000
+    origin = geopy.Point((node['y']), (node['x']))
+    destination = VincentyDistance(kilometers=distance).destination(origin, bearing)
+    return destination.latitude, destination.longitude
+
+if  name_city!='no' :
+    # HONOURS: This is still a mess
+    G = getCityGraph(name_city)
+    
+    toSave = getSaveChoice()
+    
+    if toSave:
         if len(saved)>0:
             index=int(saved[-1]['id'])
         else:
@@ -368,64 +486,25 @@ if  name_city!='no' :
     # Broken af, relying on fucking ancient version of the OSMNX lib
     #ox.plot_graph(G)
     
-    G_und = G.to_undirected()
 
     print ('Elaborating Map................')
     start = time.time()
-    
    
-    G_big=add_points(G_und,3)
+    G_big=add_points(G.to_undirected(),3)
     print ("Number nodes after algorithm: ",len(G_big.nodes()))
     
     end = time.time()
     print((end - start),'  <-----Algorithm  Time (seconds) '     )
 
-    
-    G_und=None
+    # Antenna decision == 1 means random antennas. Open a file and write their locations
     if(antenna_decision==1):
-        c=0
-        afile = open('./Inputs/CoordinatesAntennas.txt', 'w')
-        afile.write("/ID-Antenna/-/Lat/-/Long/\n")
-        for i in range(0,len(list_group)):
-
-            if len(list_group[i])!=0:
-                c+=1
-                antenna=random.choice(list_group[i])
-                afile.write("%s %s %s\n" % (c,float(G_big.node[antenna]['y']), float(G_big.node[antenna]['x'])))
-
-    afile.close()
-    if ch=='y':
-        shutil.copy2('./Inputs/CoordinatesAntennas.txt', './Inputs/saved/'+str(index)+'list/CoordinatesAntennas.txt')
+        saveAntennas(list_group, G_big, toSave)
         
-    listhours=np.loadtxt("./Inputs/hours.txt")
-    perc_hour=[]
-    
     hr=12
     hr=hr+((days-1)*24)
-    sumconts=0
-    random0_or_tracce1=0
-    
-    if random0_or_tracce1==0:    
-        for i in range(0,hr):
-            listhours[i]=15
-    
-    
-    for i in range(0,hr):
-        sumconts+=listhours[i]
-    
-    perctot=0.0
-    perc_hour.append(0)
+    perc_hour = percHourStuff(hr)
 
-    
-    for i in range(0,hr):
-        perc=float(listhours[i])/float(sumconts)
-        perctot+=perc
-        perc_hour.append(perc*100)
-      
-    
-    perc_hour[0]=((float(perctot)/float(hr))*100)
-    
-    
+    # HONOURS: Could probably just pass G_big everywhere G_imp is seen?
     G_imp=G_big
     G_old=G
     eventfile=[]
@@ -434,104 +513,64 @@ if  name_city!='no' :
         f.write("/ID-User/-/Lat/-/Long/-/Alt/-/Day/-/Hour/-/Minute/- \n")
         eventfile.append(f)
         
-        
-    edgeid=0
-    numexc=0
+    edgeid=0                       # Current edge
     countnext=0
-    contactavg=0.0
-    act_usr=1
     perc_rem=100
     perc_used=0
-    userused=0
-    userlimit=num_usr*0.9
-    conts_expected=num_usr
-    num_usr_init=num_usr
-    countcont=0
-    print ("\nCreating List of Event (list of movements of each user)")
-    
+    userused=0                     # Current user
+    num_usr_init=num_usr           # Initial user count
     pbar = tqdm(total=num_usr)
     userus=0
-    if random0_or_tracce1==0:
+
+    print ("\nCreating List of Event (list of movements of each user)")
+    
+    #if random0_or_tracce1==0:
+    if True:
         flag_first=0
     else:
         flag_first=2
-    fstat = open('./Outputs/stats_out.txt', 'w') 
     #nodiroutes = open('nodiroutes.txt', 'w')
     
     while True:
-        
         num_usr=num_usr_init-userused
         
         day=0
         
         countnext=0
-        contactavg=0.0
         perc_rem=100
         perc_used=0        
         userus=0
+
         for h in range(0,hr+2):
-           
             if h==0:
+                if flag_first==0:
+                    continue
                 
-                minutlist=[]
-                for i in range(0,105):
-                    minutlist.append(list())
             
-            else:
-                
-                for i in range (0,105):
-                    if(i<45):
-                        minutlist[i]=minutlist[60+i]
-                    else:
-                        minutlist[i]=[]
                         
-            if h==0 and flag_first==0:
-                continue                
-                
             if h==1 :
                 if flag_first==2:
                     flag_first=1
                     userused=0
-                if countcont==0 and perc_hour[0]!=0:
-                    countcont=1                
-                contfirst=countcont
                 userus=0
                 perc_used=0
                 perc_rem=100
                 countnext=0
                 
             if h!=0:
-
-                ##contactavg=float(countcont/usrtmp)
-                ##print ("number of contacts:  ",countcont,"  HOUR : ",h-1)
                 if(h==hr+1):
                     break
-                conts_expected=(perc_hour[h]*contfirst)/perc_hour[0]
                 
             ## HEATMAP start
             if h==2:
-                listheat=[]
-                for i in range(0,60):
-                    listheat.append(list())
+                listheat = initListHeat()
+                
             
             if h==3:
-                m = folium.Map([minlat,minlong], tiles='stamentoner', zoom_start=6)
+                drawHeatMap()
                 
-                hm = plugins.HeatMapWithTime(
-                    listheat,
-                    auto_play=True
-                )
-                
-                hm.add_to(m)
-                
-                bounds = [(maxlat,maxlong), (minlat,minlong)]
-                m.fit_bounds(bounds)                
-                
-                filepath = '/var/www/html/CrowdSenSim/heat.html'
-                m.save(filepath)                
             ## Heatmap END
-            countcont=countnext
-            countnext=0
+            
             usrtmp=0
            
             num_eve=0
@@ -545,28 +584,23 @@ if  name_city!='no' :
                     remaining=((perc_rem)*userused)/perc_used
                     if (remaining+userus)>num_usr:
                         print ("terminated for users ",userus)
-                        print ("Hour ",h," Users ",usrtmp," Contact ", countcont," next ",countnext,file=fstat )
                         break
                 
                 if flag_first==0 or flag_first==2:
                     if (usrtmp >= int(round((float(num_usr)/100)*perc_hour[h]))) or userused==num_usr_init:
-                        print ("Hour ",h," Users ",usrtmp," Contact ", countcont," next ",countnext,file=fstat)
                         break                        
                     
                 if flag_first==1:
-                    if (countcont >= int(conts_expected)):
-                        print ("terminated for Contact ",userus)
-                        print ("Hour ",h," Users ",usrtmp," Contact ", countcont," next ",countnext,file=fstat)
-                        break
+                    print ("terminated for Contact ",userus)
+                    break
                
                 userused+=1
                 usrtmp+=1
                 userus+=1
-                count_minute=0 
-                totd=0
+                count_minute=0
                     
                     
-                flag=0
+                removeUVFlag = False
                 if flag_first!=2:
                     pbar.update(1)
     
@@ -576,7 +610,7 @@ if  name_city!='no' :
     
     
                 if int(orig['u'])!=origin_node:
-                    flag=1
+                    removeUVFlag = True
                     node_or = {}
                     node_or['y'] = orig['y']
                     node_or['x'] = orig['x']
@@ -605,32 +639,12 @@ if  name_city!='no' :
                 if idr==0:
                     idr=max(length, key=length.get)
                     
-                ##print (cut-length[idr])
-                ##route = nx.shortest_path(G_old, origin_node, destination_node)
                 route=path[idr]
-       
-                if userused==1 :
-                    avl=len(route)/2
-                    graph_centroid = (G_old.node[route[int(avl)]]['y'],G_old.node[route[int(avl)]]['x'])
-                    route_map = folium.Map(location=graph_centroid, zoom_start=13)
-                    for idroute in range(1,len(route)):
-                        location=[(G_old.node[route[idroute-1]]['y'],G_old.node[route[idroute-1]]['x']),(G_old.node[route[idroute]]['y'],G_old.node[route[idroute]]['x'])]
-                        pl = folium.PolyLine(locations=location,color='red')
-                        
-                        pl.add_to(route_map)
-                    #icon=DivIcon(icon_size=(150,36),html='<div style="font-size: 16pt;color:red">start</div>')
-                    di= folium.map.Marker((G_old.node[route[1]]['y'],G_old.node[route[1]]['x']),popup='Start')
-                    di.add_to(route_map)
-                    
-                    di= folium.map.Marker((G_old.node[route[idroute]]['y'],G_old.node[route[idroute]]['x']),popup='End')
-                    di.add_to(route_map)
 
-                    # HONOURS: Wouldn't count on this one working either >_>
-                    #route_map = ox.plot_route_folium(G_old, route)
-                    filepath = '/var/www/html/CrowdSenSim/route_usr_1day_0.html'
-                    route_map.save(filepath)
-                    if ch=='y':
-                        shutil.copy2('/var/www/html/CrowdSenSim/route_usr_1day_0.html', './Inputs/saved/'+str(index)+'list/route_usr_1day_0.html')                
+                # HONOURS: If userused==1, do the HTML pathway generation for it
+                # most important part of this refactor, we can now do this for any path
+                if userused==1 :
+                    htmlRouteGen(route, G_old, save=toSave)
     
                 len_edges=ox.get_route_edge_attributes(G_old,route, attribute='length', minimize_key='length')
                
@@ -648,20 +662,11 @@ if  name_city!='no' :
                 num_eve+=1	
     
                 ind=0
-                avgbear=0
                 for n in  len_edges:
-                    
-                    if n!=n:
-                        continue
-                    
-                    lat1 = G_old.node[route[ind]]['y'] * math.pi / 180 
-                    lat2 = G_old.node[route[ind+1]]['y'] * math.pi / 180 
-                    long1 = G_old.node[route[ind]]['x'] * math.pi / 180 
-                    long2 = G_old.node[route[ind+1]]['x'] * math.pi / 180                             
-                    bearing1 = math.atan2(math.sin(long2-long1)*math.cos(lat2), math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(long2-long1))
-                    bearing1 = math.degrees(bearing1)
-                    bearing1 = (bearing1 + 360) % 360                     
-                    
+                    #if n!=n:
+                    #    continue
+
+                    bearing1 = calculateBearing(route, ind, G_old)
 
                     # HONOURS: Looks like old debugging line
                     #print(userused,G_old.node[route[ind]]['y'],G_old.node[route[ind]]['x'],file=nodiroutes)
@@ -672,14 +677,8 @@ if  name_city!='no' :
                     seconds=totsec%60
                     
                     if count_minute>mincamm:
-                     
-                        lat1 = G_old.node[route[ind]]['y'] * math.pi / 180 
-                        lat2 = G_old.node[route[ind+1]]['y'] * math.pi / 180 
-                        long1 = G_old.node[route[ind]]['x'] * math.pi / 180 
-                        long2 = G_old.node[route[ind+1]]['x'] * math.pi / 180                             
-                        bearing = math.atan2(math.sin(long2-long1)*math.cos(lat2), math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(long2-long1))
-                        bearing = math.degrees(bearing)
-                        bearing = (bearing + 360) % 360 
+                        bearing = calculateBearing(route, ind, G_old)
+                        
                         nd=G_old.node[route[ind]]
                         distance=0
                         for m in range(1,mincamm-(count_minute-addmin)):
@@ -692,39 +691,20 @@ if  name_city!='no' :
                                 if hours==24:
                                     break                            
                            
-                            distance= float(m*(speed*60))/1000
-                            origin = geopy.Point((nd['y']), (nd['x']))
-                            destination = VincentyDistance(kilometers=distance).destination(origin, bearing)
-                            y, x = destination.latitude, destination.longitude                               
+                            y, x = calculateYX(speed, nd, bearing, m)
                             
                             point=[y,x,userused]
                             
-                            if flag_first!=0:
-                                if tm>59:
-                                    countnext+=checkcontact(point,minutlist[tm])
-                                else:
-                                    countcont+=checkcontact(point,minutlist[tm])
-                                minutlist[tm].append(point)
                             if flag_first!=2:
                                 print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,distance,file=eventfile[day])
                         
-                        avgbear= avgbear +  (bearing1*distance)   
-                        totd=totd+distance
                         break
-                    avgbear= avgbear +  (bearing1*n)
-                    totd=totd+n
                     d=day
                     if addmin >1:
-                        lat1 = G_old.node[route[ind]]['y'] * math.pi / 180 
-                        lat2 = G_old.node[route[ind+1]]['y'] * math.pi / 180 
-                        long1 = G_old.node[route[ind]]['x'] * math.pi / 180 
-                        long2 = G_old.node[route[ind+1]]['x'] * math.pi / 180                             
-                        bearing = math.atan2(math.sin(long2-long1)*math.cos(lat2), math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(long2-long1))
-                        bearing = math.degrees(bearing)
-                        bearing = (bearing + 360) % 360 
+                        bearing = calculateBearing(route, ind, G_old)
+                        
                         nd=G_old.node[route[ind]]                        
                         for k in range(1,addmin):
-                            numexc+=1
                             minutes+=1
                             tm+=1
                             if minutes >= 60:
@@ -733,19 +713,10 @@ if  name_city!='no' :
                             
                             if hours==24:
                                 break                            
-                            distance= float(k*(speed*60))/1000
-                            origin = geopy.Point((nd['y']), (nd['x']))
-                            destination = VincentyDistance(kilometers=distance).destination(origin, bearing)
-                            y, x = destination.latitude, destination.longitude                               
+                            y, x = calculateYX(speed, nd, bearing, k)
                             
                             point=[y,x,userused]
                                 
-                            if flag_first!=0:
-                                if tm>59:
-                                    countnext+=checkcontact(point,minutlist[tm])
-                                else:
-                                    countcont+=checkcontact(point,minutlist[tm])
-                                minutlist[tm].append(point)
                             if flag_first!=2:
                                 print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day] )
                                 num_eve+=1
@@ -762,12 +733,6 @@ if  name_city!='no' :
                                 break
                         nd=G_old.node[route[ind+1]]
                         point=[(nd['y']),(nd['x']),userused]
-                        if flag_first!=0:
-                            if tm>59:
-                                countnext+=checkcontact(point,minutlist[tm])
-                            else:
-                                countcont+=checkcontact(point,minutlist[tm])
-                            minutlist[tm].append(point)
                         if flag_first!=2:
                             print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day])
                             if(h==2):
@@ -778,22 +743,21 @@ if  name_city!='no' :
                     ind+=1	
     
     
-                lat1 = G_old.node[route[0]]['y'] * math.pi / 180 
-                lat2 = point[0] * math.pi / 180 
-                long1 = G_old.node[route[0]]['x'] * math.pi / 180 
-                long2 = point[1] * math.pi / 180                             
-                bearing = math.atan2(math.sin(long2-long1)*math.cos(lat2), math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(long2-long1))
-                bearing = math.degrees(bearing)
-                bearing = (bearing + 360) % 360                 
-                avgbear=avgbear/totd
-                #print("BEARINGS",bearing,avgbear,point[0],point[1])
-                if flag==1 or flag==3:
+                bearing = calculateBearing(route, ind, G_old)
+                
+                if removeUVFlag:
                     G_old.remove_edge(int(orig['u']),int(origin_node))
                     G_old.remove_edge(int(origin_node),int(orig['v']))
-    
-    
                     G_old.remove_node(origin_node)
-    
+
+#######################################################################################################
+        # HONOURS
+        # Previous 300 lines and next 200 seem awfully similar, just can't tell what they're doing yet
+        #
+        #
+        #
+        #
+#######################################################################################################
     
         if(userused>=num_usr):
             if cud==1:
@@ -817,20 +781,16 @@ if  name_city!='no' :
         ############
         ############
     while (userused<num_usr_init):
-       
-       
         userused+=1
-     
         count_minute=0                    
-            
-        flag=0
+        removeUVFlag = False
 
         origin_node=random.randint(max_osmid+1,newosmid-1)
         orig=G_imp.node[origin_node]
 
 
         if int(orig['u'])!=origin_node:
-            flag=1
+            removeUVFlag = True
             node_or = {}
             node_or['y'] = orig['y']
             node_or['x'] = orig['x']
@@ -843,7 +803,6 @@ if  name_city!='no' :
 
 
         group_or=int(G_imp.node[origin_node]['group'])
-
         
         speed = random.uniform(min_speed,max_speed)
         
@@ -859,12 +818,10 @@ if  name_city!='no' :
             
         if idr==0:
             idr=max(length, key=length.get)
-            
 
         # HONOURS: Seems relevant for something? Old shortest path prior to (length, path) I guess
         ##route = nx.shortest_path(G_old, origin_node, destination_node)
         route=path[idr]
-
 
         len_edges=ox.get_route_edge_attributes(G_old,route, attribute='length', minimize_key='length')
         
@@ -884,9 +841,8 @@ if  name_city!='no' :
         ind=0
         
         for n in  len_edges:
-            if n!=n:
-                continue
-            
+            #if n!=n:
+            #    continue
             
             addseconds = int(n/speed)
             totsec=addseconds+seconds
@@ -895,14 +851,8 @@ if  name_city!='no' :
             seconds=totsec%60
             
             if count_minute>mincamm:
-        
-                lat1 = G_old.node[route[ind]]['y'] * math.pi / 180 
-                lat2 = G_old.node[route[ind+1]]['y'] * math.pi / 180 
-                long1 = G_old.node[route[ind]]['x'] * math.pi / 180 
-                long2 = G_old.node[route[ind+1]]['x'] * math.pi / 180                             
-                bearing = math.atan2(math.sin(long2-long1)*math.cos(lat2), math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(long2-long1))
-                bearing = math.degrees(bearing)
-                bearing = (bearing + 360) % 360 
+                bearing = calculateBearing(route, ind, G_old)
+                
                 nd=G_old.node[route[ind]]
         
                 for m in range(1,mincamm-(count_minute-addmin)):
@@ -915,36 +865,19 @@ if  name_city!='no' :
                         if hours==24:
                             break                            
         
-                    distance= float(m*(speed*60))/1000
-                    origin = geopy.Point((nd['y']), (nd['x']))
-                    destination = VincentyDistance(kilometers=distance).destination(origin, bearing)
-                    y, x = destination.latitude, destination.longitude                               
-        
+                    y, x = calculateYX(speed, nd, bearing, m)
+
                     point=[y,x,userused]
         
-        
-        
-                    if flag_first!=0:
-                        if tm>59:
-                            countnext+=checkcontact(point,minutlist[tm])
-                        else:
-                            countcont+=checkcontact(point,minutlist[tm])
-                        minutlist[tm].append(point)
                     if flag_first!=2:
                         print (userused,point[0],point[1],0,day,hours,minutes,count_minute,file=eventfile[day])                            
                 break
             d=day
             if addmin >1:
-                lat1 = G_old.node[route[ind]]['y'] * math.pi / 180 
-                lat2 = G_old.node[route[ind+1]]['y'] * math.pi / 180 
-                long1 = G_old.node[route[ind]]['x'] * math.pi / 180 
-                long2 = G_old.node[route[ind+1]]['x'] * math.pi / 180                             
-                bearing = math.atan2(math.sin(long2-long1)*math.cos(lat2), math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(long2-long1))
-                bearing = math.degrees(bearing)
-                bearing = (bearing + 360) % 360 
+                bearing = calculateBearing(route, ind, G_old)
+                
                 nd=G_old.node[route[ind]]                        
                 for k in range(1,addmin):
-                    numexc+=1
                     minutes+=1
                     tm+=1
                     if minutes >= 60:
@@ -953,19 +886,11 @@ if  name_city!='no' :
         
                         if hours==24:
                             break                            
-                    distance= float(k*(speed*60))/1000
-                    origin = geopy.Point((nd['y']), (nd['x']))
-                    destination = VincentyDistance(kilometers=distance).destination(origin, bearing)
-                    y, x = destination.latitude, destination.longitude                               
+                    y, x = calculateYX(speed, nd, bearing, k)
+
         
                     point=[y,x,userused]
         
-                    if flag_first!=0:
-                        if tm>59:
-                            countnext+=checkcontact(point,minutlist[tm])
-                        else:
-                            countcont+=checkcontact(point,minutlist[tm])
-                        minutlist[tm].append(point)
                     if flag_first!=2:
                         print (userused,point[0],point[1],0,day,hours,minutes,count_minute,file=eventfile[day] )
                         num_eve+=1
@@ -989,8 +914,7 @@ if  name_city!='no' :
                 
             ind+=1	
 
-
-        if flag==1 or flag==3:
+        if removeUVFlag:
             G_old.remove_edge(int(orig['u']),int(origin_node))
             G_old.remove_edge(int(origin_node),int(orig['v']))
 
@@ -1007,7 +931,7 @@ if  name_city!='no' :
     pbar.close	
     for d in range(0,days):
         eventfile[d].close()    
-        if ch=='y':
+        if toSave:
             shutil.copy2('./Inputs/Mobility/UserMovementsListEvents_'+str(d)+'.txt', './Inputs/saved/'+str(index)+'list/UserMovementsListEvents_'+str(d)+'.txt')
     
     
