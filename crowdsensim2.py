@@ -394,6 +394,7 @@ def percHourStuff(hours):
     return ret_perc_hour
     
 def drawHeatMap():
+    print("start heat map")
     m = folium.Map([minlat,minlong], tiles='stamentoner', zoom_start=6)
                 
     hm = plugins.HeatMapWithTime(
@@ -408,6 +409,7 @@ def drawHeatMap():
     
     filepath = '/var/www/html/CrowdSenSim/heat.html'
     m.save(filepath)
+    print("end heat map")
 
 
 def htmlRouteGen(route, G_old, save=False):
@@ -497,10 +499,11 @@ if  name_city!='no' :
     # Antenna decision == 1 means random antennas. Open a file and write their locations
     if(antenna_decision==1):
         saveAntennas(list_group, G_big, toSave)
-        
+
+    #this should be decided with the setup text file!!         
     hr=12
     hr=hr+((days-1)*24)
-    perc_hour = percHourStuff(hr)
+    #perc_hour = percHourStuff(hr)
 
     # HONOURS: Could probably just pass G_big everywhere G_imp is seen?
     G_imp=G_big
@@ -513,250 +516,184 @@ if  name_city!='no' :
         
     edgeid=0                       # Current edge
     countnext=0
-    perc_rem=100
-    perc_used=0
-    userused=0                     # Current user
+    #perc_rem=100
+    #perc_used=0
+    userused=0
+    removeUVFlag = False                     # Current user
     num_usr_init=num_usr           # Initial user count
-    pbar = tqdm(total=num_usr)
+    #pbar = tqdm(total=num_usr)
     userus=0
 
     print ("\nCreating List of Event (list of movements of each user)")
     
     #if random0_or_tracce1==0:
-    if True:
-        flag_first=0
-    else:
-        flag_first=2
+    #if True:
+        #flag_first=0
+    #else:
+        #flag_first=2
     #nodiroutes = open('nodiroutes.txt', 'w')
     
-    while True:
-        num_usr=num_usr_init-userused
+    #have this done before we even start!
+
+    listheat = initListHeat()
+    
+    #create each user individually
+    while userused!= num_usr:
+        #num_usr=num_usr_init-userused
+        userused = userused+1
+        #draw the Map! After each iteration for the user!
+        drawHeatMap()                  
+        origin_node=random.randint(max_osmid+1,newosmid-1)
+        orig=G_imp.node[origin_node]
+        if int(orig['u'])!=origin_node:
+            removeUVFlag = True
+            node_or = {}
+            node_or['y'] = orig['y']
+            node_or['x'] = orig['x']
+            node_or['osmid'] = origin_node
+            G_old.add_node(origin_node,y=orig['y'],x=orig['x'],osmid=origin_node)
+            edgeid+=1
+            G_old.add_edge(u=int(orig['u']),v=origin_node,key=0,highway='unclassified',length=float(orig['du']),oneway=False,osmid=edgeid)
+            edgeid+=1
+            G_old.add_edge(u=origin_node,v=int(orig['v']),key=0,highway='unclassified',length=float(orig['dv']),oneway=False,osmid=edgeid)
+
+
+        group_or=int(G_imp.node[origin_node]['group'])
+        speed = random.uniform(min_speed,max_speed)
+        mincamm=random.randint(20,40)                
+        cut=mincamm*60*speed
+        cutadded=cut+maxlen
         
-        day=0
+        (length, path)= nx.single_source_dijkstra(G_old, origin_node, target=None, cutoff=cutadded, weight='length')
+        idr=0
+
+        ## find the path with the longest length!! 
+        for l in length:
+            if length[l]>cut:
+                idr=l
+            
+        if idr==0:
+            idr=max(length, key=length.get)
+            
+        route=path[idr]
+
+        # HONOURS: If userused==1, do the HTML pathway generation for it
+        # most important part of this refactor, we can now do this for any path
+        if userused==1 :
+            htmlRouteGen(route, G_old, save=toSave)
+
+        #get the length of the edges of the path!
+        len_edges=ox.get_route_edge_attributes(G_old,route, attribute='length', minimize_key='length')
         
-        countnext=0
-        perc_rem=100
-        perc_used=0        
-        userus=0
+        #get random minutes!
+        #need to get random!
+        minutes=random.randint(0,59)
+        tm=minutes
+        hours = random.randint(0,days*24)
+        num_eve = 0
+        if hours==23:
+            minutes=random.randint(0,40)                
+        day= int(hours/24) if int(hours/24)<days else int(hours/24)-1
+        seconds=0
+        totsec=0
+        print  (userused,G_old.node[route[0]]['y'],G_old.node[route[0]]['x'],0,day,hours,minutes,file=eventfile[day])
+        num_eve+=1	
+        ind=0
+        count_minute=0
+        for n in  len_edges:
+            bearing1 = calculateBearing(route, ind, G_old)
 
-        for h in range(0,hr+2):
-            if h==0:
-                if flag_first==0:
-                    continue
-                        
-            if h==1 :
-                if flag_first==2:
-                    flag_first=1
-                    userused=0
-                userus=0
-                perc_used=0
-                perc_rem=100
-                countnext=0
-                
-            if h!=0:
-                if(h==hr+1):
-                    break
-                
-            ## HEATMAP start
-            if h==2:
-                listheat = initListHeat()
-                
-            
-            if h==3:
-                drawHeatMap()
-                
-            ## Heatmap END
-            
-            usrtmp=0
-           
-            num_eve=0
-            
-            perc_used+=perc_hour[h]
-            perc_rem-=perc_hour[h]
-            
-            while True:
-          
-                if flag_first==1  and h>6:
-                    remaining=((perc_rem)*userused)/perc_used
-                    if (remaining+userus)>num_usr:
-                        print ("terminated for users ",userus)
-                        break
-                
-                if flag_first==0 or flag_first==2:
-                    if (usrtmp >= int(round((float(num_usr)/100)*perc_hour[h]))) or userused==num_usr_init:
-                        break                        
-                    
-                if flag_first==1:
-                    print ("terminated for Contact ",userus)
-                    break
-               
-                userused+=1
-                usrtmp+=1
-                userus+=1
-                count_minute=0
-                    
-                    
-                removeUVFlag = False
-                if flag_first!=2:
-                    pbar.update(1)
-    
-                origin_node=random.randint(max_osmid+1,newosmid-1)
-                orig=G_imp.node[origin_node]
-    
-    
-    
-                if int(orig['u'])!=origin_node:
-                    removeUVFlag = True
-                    node_or = {}
-                    node_or['y'] = orig['y']
-                    node_or['x'] = orig['x']
-                    node_or['osmid'] = origin_node
-                    G_old.add_node(origin_node,y=orig['y'],x=orig['x'],osmid=origin_node)
-                    edgeid+=1
-                    G_old.add_edge(u=int(orig['u']),v=origin_node,key=0,highway='unclassified',length=float(orig['du']),oneway=False,osmid=edgeid)
-                    edgeid+=1
-                    G_old.add_edge(u=origin_node,v=int(orig['v']),key=0,highway='unclassified',length=float(orig['dv']),oneway=False,osmid=edgeid)
-    
-    
-                group_or=int(G_imp.node[origin_node]['group'])
-    
-                speed = random.uniform(min_speed,max_speed)
-                
-                mincamm=random.randint(20,40)                
-                cut=mincamm*60*speed
-                cutadded=cut+maxlen
-                
-                (length, path)= nx.single_source_dijkstra(G_old, origin_node, target=None, cutoff=cutadded, weight='length')
-                idr=0
-                for l in length:
-                    if length[l]>cut:
-                        idr=l
-                    
-                if idr==0:
-                    idr=max(length, key=length.get)
-                    
-                route=path[idr]
+            # HONOURS: Looks like old debugging line
+            # print(userused,G_old.node[route[ind]]['y'],G_old.node[route[ind]]['x'],file=nodiroutes)
+            # 
+            addseconds = int(n/speed)
+            totsec=addseconds+seconds
+            addmin=int(totsec/60)
+            count_minute=count_minute+addmin
+            seconds=totsec%60
 
-                # HONOURS: If userused==1, do the HTML pathway generation for it
-                # most important part of this refactor, we can now do this for any path
-                if userused==1 :
-                    htmlRouteGen(route, G_old, save=toSave)
-    
-                len_edges=ox.get_route_edge_attributes(G_old,route, attribute='length', minimize_key='length')
-               
-                minutes=random.randint(0,59)
-                tm=minutes
-                hours = (h+11)%24
-                if hours==23:
-                    minutes=random.randint(0,40)                
-                day=int((h+11)/24)
-    
-                seconds=0
-                totsec=0
-                if flag_first!=2:
-                    print  (userused,G_old.node[route[0]]['y'],G_old.node[route[0]]['x'],0,day,hours,minutes,file=eventfile[day])
-                num_eve+=1	
-    
-                ind=0
-                for n in  len_edges:
-                    bearing1 = calculateBearing(route, ind, G_old)
-
-                    # HONOURS: Looks like old debugging line
-                    #print(userused,G_old.node[route[ind]]['y'],G_old.node[route[ind]]['x'],file=nodiroutes)
-                    addseconds = int(n/speed)
-                    totsec=addseconds+seconds
-                    addmin=int(totsec/60)
-                    count_minute=count_minute+addmin
-                    seconds=totsec%60
-                    
-                    if count_minute>mincamm:
-                        bearing = calculateBearing(route, ind, G_old)
-                        
-                        nd=G_old.node[route[ind]]
-                        distance=0
-                        for m in range(1,mincamm-(count_minute-addmin)):
-                            minutes+=1
-                            tm+=1
-                            if minutes >= 60:
-                                hours=hours+1
-                                minutes=minutes-60
-                            
-                                if hours==24:
-                                    break                            
-                           
-                            y, x = calculateYX(speed, nd, bearing, m)
-                            
-                            point=[y,x,userused]
-                            
-                            if flag_first!=2:
-                                print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,distance,file=eventfile[day])
-                        
-                        break
-                    d=day
-                    if addmin >1:
-                        bearing = calculateBearing(route, ind, G_old)
-                        
-                        nd=G_old.node[route[ind]]                        
-                        for k in range(1,addmin):
-                            minutes+=1
-                            tm+=1
-                            if minutes >= 60:
-                                hours=hours+1
-                                minutes=minutes-60
-                            
-                            if hours==24:
-                                break                            
-                            y, x = calculateYX(speed, nd, bearing, k)
-                            
-                            point=[y,x,userused]
-                                
-                            if flag_first!=2:
-                                print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day] )
-                                num_eve+=1
-                            
-                    
-                    if addmin > 0:
-                        minutes+=1
-                        tm+=1
-                        if minutes >= 60:
-                            hours=hours+1
-                            minutes=minutes-60
-                        
-                            if hours==24:
-                                break
-                        nd=G_old.node[route[ind+1]]
-                        point=[(nd['y']),(nd['x']),userused]
-                        if flag_first!=2:
-                            print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day])
-                            if(h==2):
-                                listheat[minutes].append([point[0],point[1]])
-                                
-                        num_eve+=1
-                        
-                    ind+=1	
-    
-    
+            
+            if count_minute>mincamm:
                 bearing = calculateBearing(route, ind, G_old)
                 
-                if removeUVFlag:
-                    G_old.remove_edge(int(orig['u']),int(origin_node))
-                    G_old.remove_edge(int(origin_node),int(orig['v']))
-                    G_old.remove_node(origin_node)
-
-        if(userused>=num_usr):
-            if cud==1:
-                userused=save_users
-                p=float(100/float(len(perc_hour)-1))
-                for q in range(0,len(perc_hour)):
-                    perc_hour[q]=p
+                nd=G_old.node[route[ind]]
+                distance=0
+                for m in range(1,mincamm-(count_minute-addmin)):
+                    minutes+=1
+                    tm+=1
+                    if minutes >= 60:
+                        hours=hours+1
+                        minutes=minutes-60
+                    
+                        if hours==24:
+                            break                            
+                    
+                    y, x = calculateYX(speed, nd, bearing, m)
+                    point=[y,x,userused]
+                    print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,distance,file=eventfile[day])
                 
-            else:
-                #print ("\n user distibuted >> ",userused," user tot >> ",num_usr)
                 break
-            cud=0
+            d=day
+            if addmin >1:
+                bearing = calculateBearing(route, ind, G_old)
+                
+                nd=G_old.node[route[ind]]                        
+                for k in range(1,addmin):
+                    minutes+=1
+                    tm+=1
+                    if minutes >= 60:
+                        hours=hours+1
+                        minutes=minutes-60
+                    
+                    if hours==24:
+                        break                            
+                    y, x = calculateYX(speed, nd, bearing, k)
+                    point=[y,x,userused]
+                    print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day] )
+                    num_eve+=1
+                    
             
-        save_users=userused
-        flag_first=0
+            if addmin > 0:
+                minutes+=1
+                tm+=1
+                if minutes >= 60:
+                    hours=hours+1
+                    minutes=minutes-60
+                
+                    if hours==24:
+                        break
+                nd=G_old.node[route[ind+1]]
+                point=[(nd['y']),(nd['x']),userused]
+                print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day])
+                listheat[minutes].append([point[0],point[1]])
+                num_eve+=1
+                
+            ind+=1	
+
+
+        bearing = calculateBearing(route, ind, G_old)
+        
+        if removeUVFlag:
+            G_old.remove_edge(int(orig['u']),int(origin_node))
+            G_old.remove_edge(int(origin_node),int(orig['v']))
+            G_old.remove_node(origin_node)
+        # print(userused, 'userused')
+        # print(num_usr, 'num_usr')
+        # if(userused>=num_usr):
+        #     if cud==1:
+        #         userused=save_users
+        #         p=float(100/float(len(perc_hour)-1))
+        #         for q in range(0,len(perc_hour)):
+        #             perc_hour[q]=p
+                
+        #     else:
+        #         #print ("\n user distibuted >> ",userused," user tot >> ",num_usr)
+        #         break
+        #     cud=0
+            
+        # save_users=userused
+        # flag_first=0
+        
 
     # HONOURS: Original author makes this call to let STDOUT dump to the user
     time.sleep(2)
@@ -766,16 +703,272 @@ if  name_city!='no' :
 
     sys.stdout.flush()
     
-    pbar.close	
+    #pbar.close	
     for d in range(0,days):
         eventfile[d].close()    
         if toSave:
             shutil.copy2('./Inputs/Mobility/UserMovementsListEvents_'+str(d)+'.txt', './Inputs/saved/'+str(index)+'list/UserMovementsListEvents_'+str(d)+'.txt')
+
+
+    ###########################################################OLD FUNCTION ####################################
+    # while True:
+    #     print("here start at TRUE")
+    #     num_usr=num_usr_init-userused
+    #     day=0
+    #     countnext=0
+    #     perc_rem=100
+    #     perc_used=0        
+    #     userus=0
+    #     print(hr, "hr")
+    #     for h in range(0,hr+2):
+    #         print(h,"h")
+    #         if h==0:
+    #             if flag_first==0:
+    #                 continue
+                        
+    #         if h==1 :
+    #             if flag_first==2:
+    #                 flag_first=1
+    #                 userused=0
+    #             userus=0
+    #             perc_used=0
+    #             perc_rem=100
+    #             countnext=0
+                
+    #         if h!=0:
+    #             if(h==hr+1):
+    #                 break
+                
+    #         ## HEATMAP start
+    #         if h==2:
+    #             listheat = initListHeat()
+                
+            
+    #         if h==3:
+    #             drawHeatMap()
+                
+    #         ## Heatmap END
+            
+    #         usrtmp=0
+           
+    #         num_eve=0
+            
+    #         perc_used+=perc_hour[h]
+    #         perc_rem-=perc_hour[h]
+    #         print(perc_hour[h])
+            
+    #         while True:
+    #             print("Inside 2nd True")
+    #             if flag_first==1  and h>6:
+    #                 remaining=((perc_rem)*userused)/perc_used
+    #                 if (remaining+userus)>num_usr:
+    #                     print ("terminated for users ",userus)
+    #                     break
+                
+    #             if flag_first==0 or flag_first==2:
+    #                 print(userused==num_usr_init)
+    #                 print((usrtmp >= int(round((float(num_usr)/100)*perc_hour[h]))))
+    #                 print(usrtmp)
+    #                 print(int(round((float(num_usr)/100)*perc_hour[h])))
+    #                 if (usrtmp >= int(round((float(num_usr)/100)*perc_hour[h]))) or userused==num_usr_init:
+    #                     break                        
+                    
+    #             if flag_first==1:
+    #                 print ("terminated for Contact ",userus)
+    #                 break
+                
+    #             userused+=1
+    #             usrtmp+=1
+    #             userus+=1
+    #             count_minute=0
+    #             print("userused",userused)
+    #             print("usrtmp",usrtmp)
+    #             print("userus", userus)
+                
+    #             removeUVFlag = False
+    #             if flag_first!=2:
+    #                 pbar.update(1)
+    
+    #             origin_node=random.randint(max_osmid+1,newosmid-1)
+    #             orig=G_imp.node[origin_node]
+    
+    
+    
+    #             if int(orig['u'])!=origin_node:
+    #                 removeUVFlag = True
+    #                 node_or = {}
+    #                 node_or['y'] = orig['y']
+    #                 node_or['x'] = orig['x']
+    #                 node_or['osmid'] = origin_node
+    #                 G_old.add_node(origin_node,y=orig['y'],x=orig['x'],osmid=origin_node)
+    #                 edgeid+=1
+    #                 G_old.add_edge(u=int(orig['u']),v=origin_node,key=0,highway='unclassified',length=float(orig['du']),oneway=False,osmid=edgeid)
+    #                 edgeid+=1
+    #                 G_old.add_edge(u=origin_node,v=int(orig['v']),key=0,highway='unclassified',length=float(orig['dv']),oneway=False,osmid=edgeid)
+    
+    
+    #             group_or=int(G_imp.node[origin_node]['group'])
+    
+    #             speed = random.uniform(min_speed,max_speed)
+                
+    #             mincamm=random.randint(20,40)                
+    #             cut=mincamm*60*speed
+    #             cutadded=cut+maxlen
+                
+    #             (length, path)= nx.single_source_dijkstra(G_old, origin_node, target=None, cutoff=cutadded, weight='length')
+    #             idr=0
+    #             for l in length:
+    #                 if length[l]>cut:
+    #                     idr=l
+                    
+    #             if idr==0:
+    #                 idr=max(length, key=length.get)
+                    
+    #             route=path[idr]
+
+    #             # HONOURS: If userused==1, do the HTML pathway generation for it
+    #             # most important part of this refactor, we can now do this for any path
+    #             if userused==1 :
+    #                 htmlRouteGen(route, G_old, save=toSave)
+    
+    #             len_edges=ox.get_route_edge_attributes(G_old,route, attribute='length', minimize_key='length')
+               
+    #             minutes=random.randint(0,59)
+    #             tm=minutes
+    #             hours = (h+11)%24
+    #             if hours==23:
+    #                 minutes=random.randint(0,40)                
+    #             day=int((h+11)/24)
+    
+    #             seconds=0
+    #             totsec=0
+    #             if flag_first!=2:
+    #                 print  (userused,G_old.node[route[0]]['y'],G_old.node[route[0]]['x'],0,day,hours,minutes,file=eventfile[day])
+    #             num_eve+=1	
+    
+    #             ind=0
+    #             for n in  len_edges:
+    #                 bearing1 = calculateBearing(route, ind, G_old)
+
+    #                 # HONOURS: Looks like old debugging line
+    #                 #print(userused,G_old.node[route[ind]]['y'],G_old.node[route[ind]]['x'],file=nodiroutes)
+    #                 addseconds = int(n/speed)
+    #                 totsec=addseconds+seconds
+    #                 addmin=int(totsec/60)
+    #                 count_minute=count_minute+addmin
+    #                 seconds=totsec%60
+
+                    
+    #                 if count_minute>mincamm:
+    #                     bearing = calculateBearing(route, ind, G_old)
+                        
+    #                     nd=G_old.node[route[ind]]
+    #                     distance=0
+    #                     for m in range(1,mincamm-(count_minute-addmin)):
+    #                         minutes+=1
+    #                         tm+=1
+    #                         if minutes >= 60:
+    #                             hours=hours+1
+    #                             minutes=minutes-60
+                            
+    #                             if hours==24:
+    #                                 break                            
+                           
+    #                         y, x = calculateYX(speed, nd, bearing, m)
+                            
+    #                         point=[y,x,userused]
+                            
+    #                         if flag_first!=2:
+    #                             print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,distance,file=eventfile[day])
+                        
+    #                     break
+    #                 d=day
+    #                 if addmin >1:
+    #                     bearing = calculateBearing(route, ind, G_old)
+                        
+    #                     nd=G_old.node[route[ind]]                        
+    #                     for k in range(1,addmin):
+    #                         minutes+=1
+    #                         tm+=1
+    #                         if minutes >= 60:
+    #                             hours=hours+1
+    #                             minutes=minutes-60
+                            
+    #                         if hours==24:
+    #                             break                            
+    #                         y, x = calculateYX(speed, nd, bearing, k)
+                            
+    #                         point=[y,x,userused]
+                                
+    #                         if flag_first!=2:
+    #                             print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day] )
+    #                             num_eve+=1
+                            
+                    
+    #                 if addmin > 0:
+    #                     minutes+=1
+    #                     tm+=1
+    #                     if minutes >= 60:
+    #                         hours=hours+1
+    #                         minutes=minutes-60
+                        
+    #                         if hours==24:
+    #                             break
+    #                     nd=G_old.node[route[ind+1]]
+    #                     point=[(nd['y']),(nd['x']),userused]
+    #                     if flag_first!=2:
+    #                         print (userused,point[0],point[1],0,day,hours,minutes,count_minute,bearing1,n,file=eventfile[day])
+    #                         if(h==2):
+    #                             listheat[minutes].append([point[0],point[1]])
+                                
+    #                     num_eve+=1
+                        
+    #                 ind+=1	
+    
+    
+    #             bearing = calculateBearing(route, ind, G_old)
+                
+    #             if removeUVFlag:
+    #                 G_old.remove_edge(int(orig['u']),int(origin_node))
+    #                 G_old.remove_edge(int(origin_node),int(orig['v']))
+    #                 G_old.remove_node(origin_node)
+    #     print(userused, 'userused')
+    #     print(num_usr, 'num_usr')
+    #     if(userused>=num_usr):
+    #         if cud==1:
+    #             userused=save_users
+    #             p=float(100/float(len(perc_hour)-1))
+    #             for q in range(0,len(perc_hour)):
+    #                 perc_hour[q]=p
+                
+    #         else:
+    #             #print ("\n user distibuted >> ",userused," user tot >> ",num_usr)
+    #             break
+    #         cud=0
+            
+    #     save_users=userused
+    #     flag_first=0
+        
+
+    # # HONOURS: Original author makes this call to let STDOUT dump to the user
+    # time.sleep(2)
+
+    # # HONOURS: Just do it properly instead:
+    # print ("Users Created: " + str(userused) + ". Number of users on Init: " + str(num_usr_init))
+
+    # sys.stdout.flush()
+    
+    # pbar.close	
+    # for d in range(0,days):
+    #     eventfile[d].close()    
+    #     if toSave:
+    #         shutil.copy2('./Inputs/Mobility/UserMovementsListEvents_'+str(d)+'.txt', './Inputs/saved/'+str(index)+'list/UserMovementsListEvents_'+str(d)+'.txt')
     
     
 else:
     print ('Event List loaded *****')
 
+###########################################################OLD FUNCTION ####################################
 sfile = open('./Inputs/SavedList.txt', 'w')
 for item1 in saved:
     sfile.write(" %s %s %s %s\n" % (item1['id'],item1['name'],item1['us'],item1['days']))
