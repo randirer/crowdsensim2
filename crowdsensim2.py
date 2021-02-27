@@ -56,7 +56,6 @@ def checkcontact(point,listpoints):
     return count
 
 def add_points(G3,min_dist):
-
     global maxlen
     global maxlat
     global maxlong
@@ -489,12 +488,14 @@ if  name_city!='no' :
     start = time.time()
    
     G_big=add_points(G.to_undirected(),3)
+    ox.plot_graph(G)
     print ("Number nodes after algorithm: ",len(G_big.nodes()))
     
     end = time.time()
     print((end - start),'  <-----Algorithm  Time (seconds) '     )
 
     # Antenna decision == 1 means random antennas. Open a file and write their locations
+    # HONOURS: list_group created in add_points based on latitudes and longitudes.
     if(antenna_decision==1):
         saveAntennas(list_group, G_big, toSave)
         
@@ -528,11 +529,11 @@ if  name_city!='no' :
     else:
         flag_first=2
     #nodiroutes = open('nodiroutes.txt', 'w')
-    
-    while True:
+
+    day = 0
+    while (day < days):
         num_usr=num_usr_init-userused
         
-        day=0
         
         countnext=0
         perc_rem=100
@@ -599,12 +600,13 @@ if  name_city!='no' :
                 removeUVFlag = False
                 if flag_first!=2:
                     pbar.update(1)
-    
+
+                # Pick one of the random nodes we generated
                 origin_node=random.randint(max_osmid+1,newosmid-1)
                 orig=G_imp.node[origin_node]
-    
-    
-    
+
+                # Do this bullshit to create a pathway incase we had nothing to do with
+                # node's creation (old nodes that we adequately spaced apart)
                 if int(orig['u'])!=origin_node:
                     removeUVFlag = True
                     node_or = {}
@@ -617,7 +619,8 @@ if  name_city!='no' :
                     edgeid+=1
                     G_old.add_edge(u=origin_node,v=int(orig['v']),key=0,highway='unclassified',length=float(orig['dv']),oneway=False,osmid=edgeid)
     
-    
+
+                # Surprise surprise, this doesn't matter
                 group_or=int(G_imp.node[origin_node]['group'])
     
                 speed = random.uniform(min_speed,max_speed)
