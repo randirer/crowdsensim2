@@ -12,7 +12,7 @@
 
 |Finish hour simulation| = 23	
 |Finish minute simulation| = 59
-
+|Maximum number of routes per user| = 2
 ********************************ANTENNAS*********************************
 |Kind of antennas| = WiFi
 |Create random antennas|
@@ -43,8 +43,9 @@ DATA COLLECTION FRAMEWORK= 2
 |Use Real Battery Traces|
  	[0] YES [1] NO = 0
 
-
-
+*********************************Mobility Model**********************************
+|Mobility Model|
+ 	[0] Random Waypoint Model [1] Stochastic Model [2] Social Influence Model = 0
 
 
 *********IMPORTANT******

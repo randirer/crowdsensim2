@@ -39,6 +39,9 @@ minlong=999999999
 maxlen=0
 cud=0
 list_group=[]
+stochastic_model_routes = False
+social_mobility_routes = False
+number_of_routes = 1
 
 def checkcontact(point,listpoints):
     count=0
@@ -239,6 +242,7 @@ def add_points(G3,min_dist):
     return G2
 
 # HONOURS: Bullshit file parsing here
+# Adding in some parameters for different mobility patterns
 with open('Setup.txt', 'r') as data:
     count=0
     for line in data:
@@ -250,20 +254,34 @@ with open('Setup.txt', 'r') as data:
             r=line.split()
             num_usr=int(r[4])
 
+        if count==9:
+            r=line.split()
+            numhours=int(r[4])
+
+        if count==12:
+            r=line.split()
+            endhour=int(r[4])
+
+        if count==14:
+            r = line.split()
+            number_of_routes = int(r[7])
+
+        if count==18:
+            r=line.split()
+            antenna_decision=int(r[5])
+
         if count==22:
             r=line.split()
             default=int(r[5])
             print ('\nDefault choice = ',default)
 
-        if count==18:
-            r=line.split()
-            antenna_decision=int(r[5])
-        if count==9:
-            r=line.split()
-            numhours=int(r[4])
-        if count==12:
-            r=line.split()
-            endhour=int(r[4])
+        if count==47:
+            r = line.split()
+            choiceOfModel = int(r[12])
+            if choiceOfModel==1:
+                stochastic_model_routes = True
+            if choiceOfModel==2:
+                social_mobility_routes = True
             
         count+=1
 
@@ -335,6 +353,13 @@ def getCityGraph(name_city):
         print ('Antenna choice = ',antenna_decision )
         print ('Number of Days = ',days)
         print ('Number of Users = ',num_usr)
+        print('Maximum number of user movements per day = ', number_of_routes)
+        if social_mobility_routes:
+            print('Mobility Model = Social Influence Model')
+        if stochastic_model_routes:
+            print('Mobility Model = Stochastic Model')
+        else:
+            print('Mobility Model = Random Waypoint Model')
     
         try:    
             print ('Downloading map of ***',name_city,'*** ................')
@@ -531,12 +556,11 @@ if  name_city!='no' :
     
     #initialize some flags before we begin! This will have to be read in the step file!!
     listheat = initListHeat()
-    stochastic_model_routes = False
     removeUVFlag = False
 
     #this should be given to us!
     #this should be defaulted to 1
-    number_of_routes = 2
+    
     #create each user individually
     while userused!= num_usr:
         #go through the different movements for each day for 1 user!
@@ -545,6 +569,7 @@ if  name_city!='no' :
     
         # go through each day
         for day in range(days):
+            number_of_movements = random.randint(1,number_of_routes)
             #these are needed for realism (last place, last time)
             last_node = 0
             last_hour = 0
@@ -589,7 +614,9 @@ if  name_city!='no' :
                     #this will decide for us the route to chose given a stochastic model!
                     indices = np.arange(len(path))
                     stochastic_array =  np.random.dirichlet(np.ones(len(indices)),size=1)
-                    idr = np.random.choice(a=indices,size=1, p=stochastic_array[0])
+                    random_index = np.random.choice(a=indices,size=1, p=stochastic_array[0])[0]
+                    list_of_paths = list(path.items())
+                    idr = list_of_paths[random_index][0]
                 else:
                     ## find the path with the longest length!! 
                     for l in length:
@@ -599,7 +626,7 @@ if  name_city!='no' :
                         idr=max(length, key=length.get)
                 
 
-                    
+                
                 route=path[idr]
                 #get the last node so we can continue our path!!
 
@@ -703,7 +730,7 @@ if  name_city!='no' :
                     ind+=1	
 
                 last_node = route[ind]
-                bearing = calculateBearing(route, ind, G_old)
+                #bearing = calculateBearing(route, ind, G_old)
                 #we must check the last time! 
                 if hours==24:
                     break
