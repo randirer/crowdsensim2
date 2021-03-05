@@ -13,6 +13,7 @@ import folium
 from folium.features import DivIcon
 import folium.plugins as plugins
 
+import run
 
 import geopy
 from geopy.distance import VincentyDistance
@@ -32,8 +33,8 @@ grid_distance=500
 max_osmid=0
 newosmid=0
 max_walk_time=40
-maxlat=0
-maxlong=0
+maxlat=-999999999
+maxlong=-999999999
 minlat=999999999
 minlong=999999999
 maxlen=0
@@ -55,8 +56,10 @@ def checkcontact(point,listpoints):
     
     return count
 
+def getBounds():
+    return((minlat, minlong), (maxlat, maxlong))
+    
 def add_points(G3,min_dist):
-
     global maxlen
     global maxlat
     global maxlong
@@ -324,6 +327,7 @@ def getSaveChoice():
         ch = choice.lower()
         if ch!='y' and ch !='n':
             print ('Wrong selection, please retry')
+            return getSaveChoice()
         else:
             if ch == 'y':
                 return True
@@ -392,23 +396,23 @@ def percHourStuff(hours):
     
     ret_perc_hour[0]=((float(perctot)/float(hours))*100)
     return ret_perc_hour
-    
-def drawHeatMap():
 
-    m = folium.Map([minlat,minlong], tiles='stamentoner', zoom_start=6)
+def initHeatMap():
+    m = folium.Map([minlat,minlong], tiles='stamentoner', zoom_start=6) 
                 
     hm = plugins.HeatMapWithTime(
         listheat,
         auto_play=True
     )
-                
     hm.add_to(m)
-                
+    return m
+
+def drawHeatMap(heatmap):
     bounds = [(maxlat,maxlong), (minlat,minlong)]
-    m.fit_bounds(bounds)                
+    heatmap.fit_bounds(bounds)                
     
     filepath = '/var/www/html/CrowdSenSim/heat.html'
-    m.save(filepath)
+    heatmap.save(filepath)
 
 
 
@@ -483,6 +487,7 @@ if  name_city!='no' :
         setfile.close()
         
 
+    
 
     # HONOURS: Uncomment to see the graph of the city.
     # Broken af, relying on fucking ancient version of the OSMNX lib
@@ -492,6 +497,8 @@ if  name_city!='no' :
    
     G_big=add_points(G.to_undirected(),3)
     print ("Number nodes after algorithm: ",len(G_big.nodes()))
+
+    
     
     end = time.time()
     print((end - start),'  <-----Algorithm  Time (seconds) '     )
@@ -534,14 +541,26 @@ if  name_city!='no' :
     stochastic_model_routes = False
     removeUVFlag = False
 
+
     #this should be given to us!
     #this should be defaulted to 1
     number_of_routes = 2
+    heatmap = initHeatMap()
+
+    # SOCIAL MOBILITY CHECKS MADE HERE
+    social_model_routes = True
+    socialModel = None
+    if (social_model_routes):
+        number_of_routes = 1
+        socialModel = run.SocialMobility(num_usr, getBounds()[0], getBounds()[1], 0.1)
+        socialModel.initUserOrigins(max_osmid, newosmid, getBounds()[0], getBounds()[1], G_imp)
+
+
     #create each user individually
     while userused!= num_usr:
         #go through the different movements for each day for 1 user!
         userused = userused+1
-        drawHeatMap()
+        #drawHeatMap(heatmap)
     
         # go through each day
         for day in range(days):
@@ -559,10 +578,16 @@ if  name_city!='no' :
                     origin_node = last_node
                 else:
                     #get our origin node to use!
-                    origin_node=random.randint(max_osmid+1,newosmid-1)
-                    orig=G_imp.node[origin_node]
+                    if (not social_model_routes):
+                        origin_node=random.randint(max_osmid+1,newosmid-1)
+                    else:
+                        # socialModel is 0-indexed, so decrement
+                        origin_node = socialModel.locateUser(userused-1)
 
-                #not 100% sure what this is but we still need it!
+                    orig=G_imp.node[origin_node]
+                                            
+
+                # Create nodes that don't always exist in G_old.
                 if last_node==0 and int(orig['u'])!=origin_node:
                     removeUVFlag = True
                     node_or = {}
@@ -575,32 +600,36 @@ if  name_city!='no' :
                     edgeid+=1
                     G_old.add_edge(u=origin_node,v=int(orig['v']),key=0,highway='unclassified',length=float(orig['dv']),oneway=False,osmid=edgeid)
 
-                #this is like never used???
-                #group_or=int(G_imp.node[origin_node]['group'])
-
                 speed = random.uniform(min_speed,max_speed)
                 mincamm=random.randint(20,40)                
                 cut=mincamm*60*speed
                 cutadded=cut+maxlen
+
+
+                route = None
+                if (not social_model_routes):
+                    (length, path)= nx.single_source_dijkstra(G_old, origin_node, target=None, cutoff=cutadded, weight='length')
                 
-                (length, path)= nx.single_source_dijkstra(G_old, origin_node, target=None, cutoff=cutadded, weight='length')
-                idr=0
-                if stochastic_model_routes:
-                    #this will decide for us the route to chose given a stochastic model!
-                    indices = np.arange(len(path))
-                    stochastic_array =  np.random.dirichlet(np.ones(len(indices)),size=1)
-                    idr = np.random.choice(a=indices,size=1, p=stochastic_array[0])
-                else:
-                    ## find the path with the longest length!! 
-                    for l in length:
-                        if length[l]>cut:
-                            idr=l
-                    if idr==0:
-                        idr=max(length, key=length.get)
+                    idr=0
+                    if stochastic_model_routes:
+                        #this will decide for us the route to chose given a stochastic model!
+                        indices = np.arange(len(path))
+                        stochastic_array =  np.random.dirichlet(np.ones(len(indices)),size=1)
+                        idr = np.random.choice(a=indices,size=1, p=stochastic_array[0])
+                    else:
+                        ## find the path with the longest length!! 
+                        for l in length:
+                            if length[l]>cut:
+                                idr=l
+                        if idr==0:
+                            idr=max(length, key=length.get)
                 
 
                     
-                route=path[idr]
+                    route=path[idr]
+                else:
+                    route = socialModel.chooseRoute(userused-1, cut, G_old)
+                    
                 #get the last node so we can continue our path!!
 
                 # HONOURS: If userused==1, do the HTML pathway generation for it
@@ -634,9 +663,6 @@ if  name_city!='no' :
                 for n in  len_edges:
                     bearing1 = calculateBearing(route, ind, G_old)
 
-                    # HONOURS: Looks like old debugging line
-                    # print(userused,G_old.node[route[ind]]['y'],G_old.node[route[ind]]['x'],file=nodiroutes)
-                    # 
                     addseconds = int(n/speed)
                     totsec=addseconds+seconds
                     addmin=int(totsec/60)
@@ -702,6 +728,7 @@ if  name_city!='no' :
                         
                     ind+=1	
 
+                # SOCIAL MODEL: Don't forget to update user's location around here
                 last_node = route[ind]
                 bearing = calculateBearing(route, ind, G_old)
                 #we must check the last time! 
