@@ -80,7 +80,9 @@ def add_points(G3,min_dist):
             minlong=x
         if(x>maxlong):
             maxlong=x
-            
+
+    # Believe it or not this is actually related to antenna generation.
+    # Yeah I wouldn't have figured that out either.
     dist_or=ox.great_circle_vec(maxlat,minlong,maxlat,maxlong)
     dist_ver=ox.great_circle_vec(minlat,maxlong,maxlat,maxlong)
 
