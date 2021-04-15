@@ -607,8 +607,10 @@ if  name_city!='no' :
                 mincamm=random.randint(20,40)                
                 cut=mincamm*60*speed
                 cutadded=cut+maxlen
-                
-                (length, path)= nx.single_source_dijkstra(G_old, origin_node, target=None, cutoff=cutadded, weight='length')
+                try:
+                    (length, path)= nx.single_source_dijkstra(G_old, origin_node, target=None, cutoff=cutadded, weight='length')
+                except:
+                    continue
                 idr=0
                 if stochastic_model_routes:
                     #this will decide for us the route to chose given a stochastic model!
