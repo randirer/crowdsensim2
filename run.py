@@ -62,7 +62,6 @@ class SocialMobility():
 
 
         self.grid = grid
-        print(self.grid)
 
 
     # Locate the grid index belonging to the x and y (long and lat)
@@ -168,7 +167,6 @@ class SocialMobility():
                     grids[grid] = weight
 
         # Interesting that there's a builtin for exactly for this purpose, but I'll take it...
-        print(grids)
         gridIndex = random.choices(list(grids.keys()), weights=grids.values(), k=1)
         return gridIndex[0]
 
@@ -200,7 +198,7 @@ class SocialMobility():
     def chooseRoute(self, userId, cut, cityGraph):
         dest = self.randomUserPointInGrid(self.pickDestination(userId))
         
-        self.updateUser(userId, dest)
+        #self.updateUser(userId, dest)
         return self.pathTo(self.userLocs[userId][1], dest, cut, cityGraph)
 
     def initUserOrigins(self, osmidMax, osmidNew, minCoords, maxCoords, G_imp):
