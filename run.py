@@ -3,15 +3,7 @@ import random
 import networkx as nx
 
 
-# Still some tech debt to pay for here.
-# 1. User locations don't update until pseudo-node removal in crowdsemsim2.py is removed, otherwise
-#    a user's location no longer exists.
-#    Will factor this in once we begin profiling, don't want to remove this until I see how it affects
-#    the other models.
-# 2. userused/routeused order still backwards, so users have static locations for now.
-# 3. Djikstra takes awhile to run. Appears to cache after the first few iterations though.
-# 4. Djikstra pathing targets removed until 1 and 2 figured out - they have nowhere to go until that
-#    is figured out.
+# Social mobility model is generated here
 
 def normalizeList(lst):
     return [float(x)/sum(lst) for x in lst]
@@ -102,7 +94,6 @@ class SocialMobility():
         
     # Find the node id of the user
     def locateUser(self, userId):
-        print("Locationg ", userId, "from ", self.userLocs)
         userOrigin = self.userLocs[userId][1]
         return userOrigin
 
@@ -110,25 +101,29 @@ class SocialMobility():
     def userAttraction(self, uid):
         return self.userWeights[uid]
 
-    def generateConnectionList(self, userCount, conns):
+    def generateConnectionList(self, userCount, connsMean, consDev=3):
         # Generate uids to connect to, get their global weights
+        # As per meeting on 2021-04-03, updated connections to be normally distributed
+        conns = math.ceil(abs(np.random.normal(connsMean,consDev)))
         indexes = [self.userAttraction(random.randint(0,userCount-1)) for _ in range(conns)]
-
+        
         # Pad the matrix out with zeroes
         zeroes = [0 for _ in range(userCount - conns)]
 
         ret = indexes + zeroes
+
+        # Shuffle connectivity matrix to keep it interesting
         shuffleList(ret)
         return ret
                 
-    def initUsers(self, count, mean=0.5, stddev=0.25, connCoeff=0.05):
+    def initUsers(self, count, mean=0.5, stddev=0.25, connCoeff=0.012):
         # Weights give a global "attraction factor" to each user indexed by uid
         self.userWeights = nNormalRands(count, mean, stddev)
         self.userWeights = list(map(abs, self.userWeights))
 
         
         # How many other users any one user is connected to.
-        # Begin the search here if memory becomes an issue, lot a useless zeroes here.
+        # Normally distributed amount of connectivity
         connections = 1+int(count*connCoeff)
         self.userConns = []
         for uid in range(count):
@@ -177,12 +172,12 @@ class SocialMobility():
         return gridIndex[0]
 
     # User has moved along their destination path, now update their location in the lookup array
-    def updateUser(userId, lastNodeID ):
-        self.userLocs[userId] = lastNodeID
+    def updateUser(self, userId, lastNodeID):
+        lastInfo = self.userLocs[userId]
+        userls = self.userLocs
+        userls[userId] = (lastInfo[0], lastNodeID)
+        
 
-    ### NOTE
-    ### The following functions all have some dependency on the graphs of cities.
-    ### I expect the worst of problems can be found from here on out
     def pathTo(self, originNode, node, cut, cityGraph):
         
         # Returns tuple of two dictionaries keyed by target nodes.
@@ -196,12 +191,15 @@ class SocialMobility():
                 
         if idr==0:
             idr = max(length, key=length.get)
-
+                    
         # From here we can feed this into the rest of the user generation algorithm and continue
         return path[idr]
+        #return path
     
     def chooseRoute(self, userId, cut, cityGraph):
         dest = self.randomUserPointInGrid(self.pickDestination(userId))
+        
+        self.updateUser(userId, dest)
         return self.pathTo(self.userLocs[userId][1], dest, cut, cityGraph)
 
     def initUserOrigins(self, osmidMax, osmidNew, minCoords, maxCoords, G_imp):
@@ -214,32 +212,3 @@ class SocialMobility():
             nodeId = random.randint(osmidMax+1, osmidNew-1)
             tempNode = G_imp.node[nodeId]
             self.userLocs.append(((tempNode['x'], tempNode['y']), nodeId))
-
-        print(self.userLocs)
-
-            #x = random.randint(minCoords[1], maxCoords[1])
-            #y = random.randint(minCoords[0], maxCoords[0])
-            # self.userLocs.append(((x,y), nodeId))
-
-
-                      
-    
-
-
-
-# sm = SocialMobility(10, (0, 0), (4, 6), 1)
-# sm.initUserOrigins(5, 10, (0,0), (4,6))
-# print(sm.locateGrid(1,2))
-
-# print("Picking destination for user 0")
-# dest = sm.pickDestination(0)
-# print(dest)
-
-# print("Users currently there:")
-# print(sm.usersInGrid(dest))
-
-
-# print("Destination function:")
-# print(sm.randomUserPointInGrid(dest))
-
-# sm.chooseRoute(0, 10)
