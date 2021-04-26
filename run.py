@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import networkx as nx
+import math
 
 
 # Social mobility model is generated here
